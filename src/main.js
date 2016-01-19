@@ -44,6 +44,7 @@ export function main() {
 
 	rl.on('close', () => {
 		nats.close();
+		process.exit(0);
 	});
 	rl.on('line', line => {
 		function next() {
@@ -75,6 +76,7 @@ export function main() {
 							sid = nats.subscribe(argv[1], (msg, reply, subject) => {
 								console.log(`[${subject}]: ${msg}`);
 							});
+							nats.once('disconnect', done);
 						},
 						() => {
 							nats.unsubscribe(sid);
@@ -129,8 +131,33 @@ export function main() {
 	});
 
 	var nats = NATS.connect(program.server);
+
+	function ping() {
+		if (!nats || !nats.pongs) return;
+		nats.sendCommand('PING\r\n');
+		nats.pongs.push(null);
+	}
+	setInterval(function() {
+		if (nats && nats.pongs && nats.pongs.length > 5)
+			return nats.stream.end();
+		ping();
+	}, 1000);
+
+	function attachDisconnectHandler() {
+		nats.once('disconnect', () => {
+			rl.pause();
+			rl.clearLine(process.stdout, 0);
+			util.warn("Disconnected from server, attempting reconnect...");
+			nats.once('reconnect', () => {
+				rl.resume();
+				rl.prompt();
+				attachDisconnectHandler();
+			});
+		});
+	}
 	nats.on('close', () => {
-		process.exit(0);
+		util.error("Connection was closed");
+		rl.close();
 	});
 	nats.on('error', e => {
 		rl.clearLine(process.stdout, 0);
@@ -139,6 +166,7 @@ export function main() {
 	});
 	nats.on('connect', () => {
 		util.info("Connected to server " + nats.url.href);
+		attachDisconnectHandler();
 		rl.setPrompt('> ');
 		rl.prompt();
 	});

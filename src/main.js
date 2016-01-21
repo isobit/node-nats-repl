@@ -6,12 +6,14 @@ import util from './util';
 
 export function main() {
 
+	let defaultUri = process.env.NATS_REPL_DEFAULT_URI || null;
+
 	program
-		.version('0.0.1')
-		.option('-s, --server <uri>', 'specify NATS uri')
+		.version(require('../package.json').version)
+		.option('-s, --server <uri>', 'specify NATS uri (defaults to NATS_REPL_DEFAULT_URI in env)', defaultUri)
 		.parse(process.argv);
 
-	var hist = {
+	let hist = {
 		data: [],
 		idx: 0,
 		push(v) {
@@ -26,7 +28,7 @@ export function main() {
 		}
 	};
 
-	var rl = readline.createInterface({
+	let rl = readline.createInterface({
 		input: process.stdin,
 		output: process.stdout
 	});
@@ -138,9 +140,12 @@ export function main() {
 		nats.pongs.push(null);
 	}
 	setInterval(function() {
-		if (nats && nats.pongs && nats.pongs.length > 5)
+		try {
+		if (nats.pongs.length > 5)
 			return nats.stream.end();
 		ping();
+		} catch (e) {
+		}
 	}, 1000);
 
 	function attachDisconnectHandler() {

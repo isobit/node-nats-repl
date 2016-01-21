@@ -3,10 +3,11 @@ import readline from 'readline';
 import program from 'commander';
 import colors from 'colors';
 import util from './util';
+import match from './match';
 
 export function main() {
 
-	let defaultUri = process.env.NATS_REPL_DEFAULT_URI || null;
+	let defaultUri = process.env.NATS_REPL_DEFAULT_URI || undefined;
 
 	program
 		.version(require('../package.json').version)
@@ -66,43 +67,40 @@ export function main() {
 			f(done);
 		}
 		var argv = line.trim().split(' ');
-		switch (argv[0]) {
-			case "pub":
+		match([
+			['pub', () => {
 				nats.publish(argv[1], argv[2]);
-				break;
-			case "sub":
-				(function() {
-					var sid;
-					runCancelable(
-						done => {
-							sid = nats.subscribe(argv[1], (msg, reply, subject) => {
-								console.log(`[${subject}]: ${msg}`);
-							});
-							nats.once('disconnect', done);
-						},
-						() => {
-							nats.unsubscribe(sid);
-						}
-					);
-				})();
-				return;
-			case "req":
-				(function() {
-					var sid;
-					runCancelable(
-						done => {
-							sid = nats.request(argv[1], argv[2], {max: argv[3] || 1}, msg => {
-								console.log(msg); 
-								done();
-							});
-						},
-						() => {
-							nats.unsubscribe(sid);
-						}
-					);
-				})();
-				return;
-			case "help":
+				next();
+			}],
+			['sub', () => {
+				var sid;
+				runCancelable(
+					done => {
+						sid = nats.subscribe(argv[1], (msg, reply, subject) => {
+							console.log(`[${subject}]: ${msg}`);
+						});
+						nats.once('disconnect', done);
+					},
+					() => {
+						nats.unsubscribe(sid);
+					}
+				);
+			}],
+			['req', () => {
+				var sid;
+				runCancelable(
+					done => {
+						sid = nats.request(argv[1], argv[2], {max: argv[3] || 1}, msg => {
+							console.log(msg); 
+							done();
+						});
+					},
+					() => {
+						nats.unsubscribe(sid);
+					}
+				);
+			}],
+			['help', () => {
 				if (argv.length > 1) {
 					switch (argv[1]) {
 						case "pub":
@@ -121,15 +119,16 @@ export function main() {
 				} else {
 					console.log("available commands: pub, sub, req, exit");
 				}
-				break;
-			case "exit":
+				next();
+			}],
+			['exit', () => {
 				rl.close();
-				return;
-			default:
+			}],
+			() => {
 				console.log("unknown command " + argv[0]);
-				break;
-		}
-		next();
+				next();
+			}
+		])(argv[0]);
 	});
 
 	var nats = NATS.connect(program.server);
